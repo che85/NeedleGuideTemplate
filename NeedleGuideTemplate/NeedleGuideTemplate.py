@@ -15,7 +15,7 @@ class NeedleGuideTemplate(ScriptedLoadableModule):
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
     self.parent.title = "NeedleGuideTemplate" # TODO make this more human readable by adding spaces
-    self.parent.categories = ["Examples"]
+    self.parent.categories = ["IGT"]
     self.parent.dependencies = []
     self.parent.contributors = ["Junichi Tokuda (Brigham and Women's Hospital)"] # replace with "Firstname Lastname (Organization)"
     self.parent.helpText = """
@@ -41,6 +41,78 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
     # Instantiate and connect widgets ...
+
+
+    #--------------------------------------------------
+    # For debugging
+    #
+    # Reload and Test area
+    reloadCollapsibleButton = ctk.ctkCollapsibleButton()
+    reloadCollapsibleButton.text = "Reload && Test"
+    self.layout.addWidget(reloadCollapsibleButton)
+    reloadFormLayout = qt.QFormLayout(reloadCollapsibleButton)
+
+    reloadCollapsibleButton.collapsed = True
+    
+    # reload button
+    # (use this during development, but remove it when delivering
+    #  your module to users)
+    self.reloadButton = qt.QPushButton("Reload")
+    self.reloadButton.toolTip = "Reload this module."
+    self.reloadButton.name = "NeedleGuideTemlpate Reload"
+    reloadFormLayout.addWidget(self.reloadButton)
+    self.reloadButton.connect('clicked()', self.onReload)
+    #
+    #--------------------------------------------------
+
+    #--------------------------------------------------
+    #
+    # Configuration
+    #
+    configCollapsibleButton = ctk.ctkCollapsibleButton()
+    configCollapsibleButton.text = "Configuration"
+    self.layout.addWidget(configCollapsibleButton)
+
+    configFormLayout = qt.QFormLayout(configCollapsibleButton)
+
+    configCollapsibleButton.collapsed = True
+
+    templateConfigPathLayout = qt.QHBoxLayout()
+    
+    self.templateConfigPathEdit = qt.QLineEdit()
+    self.templateConfigPathEdit.text = ""
+    self.templateConfigPathEdit.readOnly = False
+    self.templateConfigPathEdit.frame = True
+    self.templateConfigPathEdit.styleSheet = "QLineEdit { background:transparent; }"
+    self.templateConfigPathEdit.cursor = qt.QCursor(qt.Qt.IBeamCursor)
+    templateConfigPathLayout.addWidget(self.templateConfigPathEdit)
+
+    self.templateConfigButton = qt.QPushButton("...")
+    self.templateConfigButton.toolTip = "Choose a template configuration file"
+    self.templateConfigButton.enabled = True
+    self.templateConfigButton.connect('clicked(bool)', self.onTemplateConfigButton)
+    templateConfigPathLayout.addWidget(self.templateConfigButton)
+
+    configFormLayout.addRow("Template Config File: ", templateConfigPathLayout)
+
+    fiducialConfigPathLayout = qt.QHBoxLayout()
+    
+    self.fiducialConfigPathEdit = qt.QLineEdit()
+    self.fiducialConfigPathEdit.text = ""
+    self.fiducialConfigPathEdit.readOnly = False
+    self.fiducialConfigPathEdit.frame = True
+    self.fiducialConfigPathEdit.styleSheet = "QLineEdit { background:transparent; }"
+    self.fiducialConfigPathEdit.cursor = qt.QCursor(qt.Qt.IBeamCursor)
+    fiducialConfigPathLayout.addWidget(self.fiducialConfigPathEdit)
+
+    self.fiducialConfigButton = qt.QPushButton("...")
+    self.fiducialConfigButton.toolTip = "Choose a fiducial configuration file"
+    self.fiducialConfigButton.enabled = True
+    self.fiducialConfigButton.connect('clicked(bool)', self.onFiducialConfigButton)
+    fiducialConfigPathLayout.addWidget(self.fiducialConfigButton)
+
+    configFormLayout.addRow("Fiducial Config File: ", fiducialConfigPathLayout)
+
 
     #
     # Parameters Area
@@ -131,6 +203,24 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     screenshotScaleFactor = int(self.screenshotScaleFactorSliderWidget.value)
     print("Run the algorithm")
     logic.run(self.inputSelector.currentNode(), self.outputSelector.currentNode(), enableScreenshotsFlag,screenshotScaleFactor)
+
+  def onReload(self, moduleName="NeedleGuideTemplate"):
+    # Generic reload method for any scripted module.
+    # ModuleWizard will subsitute correct default moduleName.
+
+    globals()[moduleName] = slicer.util.reloadScriptedModule(moduleName)
+
+  def onTemplateConfigButton(self):
+    path = self.templateConfigPathEdit.text
+    path = qt.QFileDialog.getOpenFileName(None, 'Open Template File', path, '*.csv')
+    self.templateConfigPathEdit.setText = path
+
+    pass
+
+  def onFiducialConfigButton(self):
+    path = '/'
+    filename = qt.QFileDialog.getOpenFileName(None, 'Open Fiducial File', path, '.csv')
+    pass
 
 
 #
