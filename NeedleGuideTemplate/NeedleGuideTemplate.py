@@ -1,5 +1,6 @@
 import os
 import unittest
+import csv
 from __main__ import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 
@@ -42,6 +43,7 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     ScriptedLoadableModuleWidget.setup(self)
     # Instantiate and connect widgets ...
 
+    self.logic = NeedleGuideTemplateLogic(None)
 
     #--------------------------------------------------
     # For debugging
@@ -115,15 +117,34 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
 
 
     #
-    # Parameters Area
+    # Main Area
     #
-    parametersCollapsibleButton = ctk.ctkCollapsibleButton()
-    parametersCollapsibleButton.text = "Parameters"
-    self.layout.addWidget(parametersCollapsibleButton)
+    mainCollapsibleButton = ctk.ctkCollapsibleButton()
+    mainCollapsibleButton.text = "Main"
+    self.layout.addWidget(mainCollapsibleButton)
 
     # Layout within the dummy collapsible button
-    parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
+    mainFormLayout = qt.QFormLayout(mainCollapsibleButton)
 
+    self.showTemplateCheckBox = qt.QCheckBox()
+    self.showTemplateCheckBox.checked = 0
+    self.showTemplateCheckBox.setToolTip("Show 3D model of the template")
+    mainFormLayout.addRow("Show Template:", self.showTemplateCheckBox)
+    self.showTemplateCheckBox.connect('toggled(bool)', self.onShowTemplate)
+
+    self.showFiducialCheckBox = qt.QCheckBox()
+    self.showFiducialCheckBox.checked = 0
+    self.showFiducialCheckBox.setToolTip("Show 3D model of the fiducial")
+    mainFormLayout.addRow("Show Fiducial:", self.showFiducialCheckBox)
+    self.showFiducialCheckBox.connect('toggled(bool)', self.onShowFiducial)
+
+    self.showTrajectoriesCheckBox = qt.QCheckBox()
+    self.showTrajectoriesCheckBox.checked = 0
+    self.showTrajectoriesCheckBox.setToolTip("Show 3D model of the fiducial")
+    mainFormLayout.addRow("Show Trajectories:", self.showTrajectoriesCheckBox)
+    self.showTrajectoriesCheckBox.connect('toggled(bool)', self.onShowTrajectories)
+
+    
     #
     # input volume selector
     #
@@ -138,7 +159,7 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     self.inputSelector.showChildNodeTypes = False
     self.inputSelector.setMRMLScene( slicer.mrmlScene )
     self.inputSelector.setToolTip( "Pick the input to the algorithm." )
-    parametersFormLayout.addRow("Input Volume: ", self.inputSelector)
+    mainFormLayout.addRow("Input Volume: ", self.inputSelector)
 
     #
     # output volume selector
@@ -154,7 +175,7 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     self.outputSelector.showChildNodeTypes = False
     self.outputSelector.setMRMLScene( slicer.mrmlScene )
     self.outputSelector.setToolTip( "Pick the output to the algorithm." )
-    parametersFormLayout.addRow("Output Volume: ", self.outputSelector)
+    mainFormLayout.addRow("Output Volume: ", self.outputSelector)
 
     #
     # check box to trigger taking screen shots for later use in tutorials
@@ -162,7 +183,7 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     self.enableScreenshotsFlagCheckBox = qt.QCheckBox()
     self.enableScreenshotsFlagCheckBox.checked = 0
     self.enableScreenshotsFlagCheckBox.setToolTip("If checked, take screen shots for tutorials. Use Save Data to write them to disk.")
-    parametersFormLayout.addRow("Enable Screenshots", self.enableScreenshotsFlagCheckBox)
+    mainFormLayout.addRow("Enable Screenshots", self.enableScreenshotsFlagCheckBox)
 
     #
     # scale factor for screen shots
@@ -173,7 +194,7 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     self.screenshotScaleFactorSliderWidget.maximum = 50.0
     self.screenshotScaleFactorSliderWidget.value = 1.0
     self.screenshotScaleFactorSliderWidget.setToolTip("Set scale factor for the screen shots.")
-    parametersFormLayout.addRow("Screenshot scale factor", self.screenshotScaleFactorSliderWidget)
+    mainFormLayout.addRow("Screenshot scale factor", self.screenshotScaleFactorSliderWidget)
 
     #
     # Apply Button
@@ -181,7 +202,7 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     self.applyButton = qt.QPushButton("Apply")
     self.applyButton.toolTip = "Run the algorithm."
     self.applyButton.enabled = False
-    parametersFormLayout.addRow(self.applyButton)
+    mainFormLayout.addRow(self.applyButton)
 
     # connections
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
@@ -213,13 +234,22 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
   def onTemplateConfigButton(self):
     path = self.templateConfigPathEdit.text
     path = qt.QFileDialog.getOpenFileName(None, 'Open Template File', path, '*.csv')
-    self.templateConfigPathEdit.setText = path
-
-    pass
+    self.templateConfigPathEdit.setText(path)
+    self.logic.loadTemplateConfigFile(path)
+    
 
   def onFiducialConfigButton(self):
-    path = '/'
+    path = self.fiducialConfigPathEdit.text
     filename = qt.QFileDialog.getOpenFileName(None, 'Open Fiducial File', path, '.csv')
+    self.fiducialConfigPathEdit.setText(path)
+
+  def onShowTemplate(self):
+    pass
+
+  def onShowFiducial(self):
+    pass
+
+  def onShowTrajectories(self):
     pass
 
 
@@ -236,6 +266,70 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
   Uses ScriptedLoadableModuleLogic base class, available at:
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
+
+  def __init__(self, parent):
+    ScriptedLoadableModuleLogic.__init__(self, parent)
+
+    self.fiducialName = ''
+    self.fiducialConfig = []
+    self.templateName = ''
+    self.templateConfig = []
+    self.templateModelNodeID = ''
+
+  def loadFiducialConfigFile(self, path):
+    reader = csv.reader(open(path, 'rb'))
+        
+  def loadTemplateConfigFile(self, path):
+    header = False
+    reader = csv.reader(open(path, 'rb'))
+    try:
+      for row in reader:
+        if header:
+          self.templateConfig.append(row)
+          print row
+        else:
+          self.templateName = row[0]
+          header = True
+    except csv.Error as e:
+      print('file %s, line %d: %s' % (filename, reader.line_num, e))
+
+    self.createTemplateModel()
+
+  def createTemplateModel(self):
+    
+    mnode = slicer.mrmlScene.GetNodeByID(self.templateModelNodeID)
+    if mnode == None:
+      mnode = slicer.vtkMRMLModelNode()
+      mnode.SetName('NeedleGuideTemplate')
+      slicer.mrmlScene.AddNode(mnode)
+      self.templateModelNodeID = mnode.GetID()
+
+      modelDisplayNode = slicer.vtkMRMLModelDisplayNode()
+      #modelDisplayNode.SetColor(self.ModelColor)
+      slicer.mrmlScene.AddNode(modelDisplayNode)
+      mnode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
+      
+    append = vtk.vtkAppendPolyData()
+    
+    for row in self.templateConfig:
+      cylinderSource = vtk.vtkCylinderSource()
+      cx = (float(row[2])+float(row[5]))/2.0
+      cy = (float(row[3])+float(row[6]))/2.0
+      cz = (float(row[4])+float(row[7]))/2.0
+      cylinderSource.SetCenter(cx, cy, cz)
+      cylinderSource.SetRadius(5.0)
+      cylinderSource.SetHeight(7.0)
+      cylinderSource.SetResolution(100)
+      cylinderSource.Update()
+
+      if vtk.VTK_MAJOR_VERSION <= 5:
+        append.AddInput(cylinderSource.GetOutput());
+      else:
+        append.AddInputData(cylinderSource.GetOutput());
+
+      append.Update()
+      mnode.SetAndObservePolyData(append.GetOutput())
+ 
 
   def hasImageData(self,volumeNode):
     """This is a dummy logic method that
