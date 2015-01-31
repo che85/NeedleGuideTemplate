@@ -1,6 +1,7 @@
 import os
 import unittest
 import csv
+import numpy
 from __main__ import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 
@@ -236,7 +237,6 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     path = qt.QFileDialog.getOpenFileName(None, 'Open Template File', path, '*.csv')
     self.templateConfigPathEdit.setText(path)
     self.logic.loadTemplateConfigFile(path)
-    
 
   def onFiducialConfigButton(self):
     path = self.fiducialConfigPathEdit.text
@@ -244,14 +244,13 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     self.fiducialConfigPathEdit.setText(path)
 
   def onShowTemplate(self):
-    pass
-
+    self.logic.setTemplateVisibility(self.showTemplateCheckBox.checked)
+    
   def onShowFiducial(self):
     pass
 
   def onShowTrajectories(self):
-    pass
-
+    self.logic.setNeedlePathVisibility(self.showTrajectoriesCheckBox.checked)
 
 #
 # NeedleGuideTemplateLogic
@@ -274,7 +273,10 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     self.fiducialConfig = []
     self.templateName = ''
     self.templateConfig = []
+    self.templateIndex = []
+    self.templateMaxDepth = []
     self.templateModelNodeID = ''
+    self.needlePathModelNodeID = ''
 
   def loadFiducialConfigFile(self, path):
     reader = csv.reader(open(path, 'rb'))
@@ -285,16 +287,22 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     try:
       for row in reader:
         if header:
-          self.templateConfig.append(row)
-          print row
+          self.templateIndex.append(row[0:2])
+          self.templateConfig.append([float(row[2]), float(row[3]), float(row[4]),
+                                      float(row[5]), float(row[6]), float(row[7]),
+                                      float(row[8])])
         else:
           self.templateName = row[0]
           header = True
     except csv.Error as e:
       print('file %s, line %d: %s' % (filename, reader.line_num, e))
 
+    print self.templateConfig
     self.createTemplateModel()
-
+    self.createNeedlePathModel()
+    self.setTemplateVisibility(0)
+    self.setNeedlePathVisibility(0)
+    
   def createTemplateModel(self):
     
     mnode = slicer.mrmlScene.GetNodeByID(self.templateModelNodeID)
@@ -312,25 +320,90 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     append = vtk.vtkAppendPolyData()
     
     for row in self.templateConfig:
-      cylinderSource = vtk.vtkCylinderSource()
-      cx = (float(row[2])+float(row[5]))/2.0
-      cy = (float(row[3])+float(row[6]))/2.0
-      cz = (float(row[4])+float(row[7]))/2.0
-      cylinderSource.SetCenter(cx, cy, cz)
-      cylinderSource.SetRadius(5.0)
-      cylinderSource.SetHeight(7.0)
-      cylinderSource.SetResolution(100)
-      cylinderSource.Update()
+
+      lineSource = vtk.vtkLineSource()
+      lineSource.SetPoint1(row[0], row[1], row[2])
+      lineSource.SetPoint2(row[3], row[4], row[5])
+ 
+      tubeFilter = vtk.vtkTubeFilter()
+      tubeFilter.SetInputConnection(lineSource.GetOutputPort())
+      tubeFilter.SetRadius(1.0)
+      tubeFilter.SetNumberOfSides(20)
+      tubeFilter.CappingOn()
+      tubeFilter.Update()
 
       if vtk.VTK_MAJOR_VERSION <= 5:
-        append.AddInput(cylinderSource.GetOutput());
+        append.AddInput(tubeFilter.GetOutput());
       else:
-        append.AddInputData(cylinderSource.GetOutput());
+        append.AddInputData(tubeFilter.GetOutput());
 
       append.Update()
       mnode.SetAndObservePolyData(append.GetOutput())
- 
 
+  def createNeedlePathModel(self):
+
+    mnode = slicer.mrmlScene.GetNodeByID(self.needlePathModelNodeID)
+    if mnode == None:
+      mnode = slicer.vtkMRMLModelNode()
+      mnode.SetName('NeedleGuideNeedlePath')
+      slicer.mrmlScene.AddNode(mnode)
+      self.needlePathModelNodeID = mnode.GetID()
+
+      modelDisplayNode = slicer.vtkMRMLModelDisplayNode()
+      slicer.mrmlScene.AddNode(modelDisplayNode)
+      mnode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
+      
+    append = vtk.vtkAppendPolyData()
+    
+    for row in self.templateConfig:
+
+      lineSource = vtk.vtkLineSource()
+      v = numpy.array([row[3]-row[0], row[4]-row[1], row[5]-row[2]])
+      nl = numpy.linalg.norm(v)
+      n = v/nl  # normal vector
+      l = row[6]
+      lineSource.SetPoint1(row[3], row[4], row[5])
+      lineSource.SetPoint2(row[0]+l*n[0], row[1]+l*n[1], row[2]+l*n[2])
+ 
+      tubeFilter = vtk.vtkTubeFilter()
+      tubeFilter.SetInputConnection(lineSource.GetOutputPort())
+      tubeFilter.SetRadius(1)
+      tubeFilter.SetNumberOfSides(20)
+      tubeFilter.CappingOn()
+      tubeFilter.Update()
+
+      if vtk.VTK_MAJOR_VERSION <= 5:
+        append.AddInput(tubeFilter.GetOutput());
+      else:
+        append.AddInputData(tubeFilter.GetOutput());
+
+      append.Update()
+      mnode.SetAndObservePolyData(append.GetOutput())
+
+  def setModelVisibilityByID(self, id, visible):
+
+    mnode = slicer.mrmlScene.GetNodeByID(id)
+    if mnode != None:
+      dnode = mnode.GetDisplayNode()
+      if dnode != None:
+        dnode.SetVisibility(visible)
+
+  def setModelSliceIntersectionVisibilityByID(self, id, visible):
+
+    mnode = slicer.mrmlScene.GetNodeByID(id)
+    if mnode != None:
+      dnode = mnode.GetDisplayNode()
+      if dnode != None:
+        dnode.SetSliceIntersectionVisibility(visible)
+        
+  def setTemplateVisibility(self, visibility):
+    self.setModelVisibilityByID(self.templateModelNodeID, visibility)
+
+  def setNeedlePathVisibility(self, visibility):
+    self.setModelVisibilityByID(self.needlePathModelNodeID, visibility)
+    self.setModelSliceIntersectionVisibilityByID(self.needlePathModelNodeID, visibility)
+    
+    
   def hasImageData(self,volumeNode):
     """This is a dummy logic method that
     returns true if the passed in volume
