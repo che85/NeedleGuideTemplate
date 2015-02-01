@@ -116,17 +116,22 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
 
     configFormLayout.addRow("Fiducial Config File: ", fiducialConfigPathLayout)
 
-
     #
     # Main Area
     #
     mainCollapsibleButton = ctk.ctkCollapsibleButton()
     mainCollapsibleButton.text = "Main"
+
     self.layout.addWidget(mainCollapsibleButton)
 
     # Layout within the dummy collapsible button
-    mainFormLayout = qt.QFormLayout(mainCollapsibleButton)
+    #mainFormLayout = qt.QFormLayout(mainCollapsibleButton)
+    mainLayout = qt.QVBoxLayout(mainCollapsibleButton)
 
+    mainFormFrame = qt.QFrame()
+    mainFormLayout = qt.QFormLayout(mainFormFrame)
+    mainLayout.addWidget(mainFormFrame)
+    
     self.showTemplateCheckBox = qt.QCheckBox()
     self.showTemplateCheckBox.checked = 0
     self.showTemplateCheckBox.setToolTip("Show 3D model of the template")
@@ -144,71 +149,78 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     self.showTrajectoriesCheckBox.setToolTip("Show 3D model of the fiducial")
     mainFormLayout.addRow("Show Trajectories:", self.showTrajectoriesCheckBox)
     self.showTrajectoriesCheckBox.connect('toggled(bool)', self.onShowTrajectories)
-
     
     #
     # input volume selector
     #
-    self.inputSelector = slicer.qMRMLNodeComboBox()
-    self.inputSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
-    self.inputSelector.addAttribute( "vtkMRMLScalarVolumeNode", "LabelMap", 0 )
-    self.inputSelector.selectNodeUponCreation = True
-    self.inputSelector.addEnabled = False
-    self.inputSelector.removeEnabled = False
-    self.inputSelector.noneEnabled = False
-    self.inputSelector.showHidden = False
-    self.inputSelector.showChildNodeTypes = False
-    self.inputSelector.setMRMLScene( slicer.mrmlScene )
-    self.inputSelector.setToolTip( "Pick the input to the algorithm." )
-    mainFormLayout.addRow("Input Volume: ", self.inputSelector)
+    self.targetFiducialsSelector = slicer.qMRMLNodeComboBox()
+    self.targetFiducialsSelector.nodeTypes = ( ("vtkMRMLMarkupsFiducialNode"), "" )
+    self.targetFiducialsSelector.selectNodeUponCreation = True
+    self.targetFiducialsSelector.addEnabled = True
+    self.targetFiducialsSelector.removeEnabled = True
+    self.targetFiducialsSelector.noneEnabled = False
+    self.targetFiducialsSelector.showHidden = False
+    self.targetFiducialsSelector.showChildNodeTypes = False
+    self.targetFiducialsSelector.setMRMLScene( slicer.mrmlScene )
+    self.targetFiducialsSelector.setToolTip( "Select Markups for targets" )
+    mainFormLayout.addRow("Targets: ", self.targetFiducialsSelector)
 
+    self.targetFiducialsNode = None
+    self.targetFiducialsSelector.connect("currentNodeChanged(vtkMRMLNode*)",
+                                         self.onFiducialsSelected)
+    
     #
-    # output volume selector
+    # Target List Table
     #
-    self.outputSelector = slicer.qMRMLNodeComboBox()
-    self.outputSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
-    self.outputSelector.addAttribute( "vtkMRMLScalarVolumeNode", "LabelMap", 0 )
-    self.outputSelector.selectNodeUponCreation = False
-    self.outputSelector.addEnabled = True
-    self.outputSelector.removeEnabled = True
-    self.outputSelector.noneEnabled = False
-    self.outputSelector.showHidden = False
-    self.outputSelector.showChildNodeTypes = False
-    self.outputSelector.setMRMLScene( slicer.mrmlScene )
-    self.outputSelector.setToolTip( "Pick the output to the algorithm." )
-    mainFormLayout.addRow("Output Volume: ", self.outputSelector)
+    self.table = qt.QTableWidget(1, 4)
+    #self.table.setSizePolicy(qt.QSizePolicy.Expanding, qt.QSizePolicy.Expanding)
 
-    #
-    # check box to trigger taking screen shots for later use in tutorials
-    #
-    self.enableScreenshotsFlagCheckBox = qt.QCheckBox()
-    self.enableScreenshotsFlagCheckBox.checked = 0
-    self.enableScreenshotsFlagCheckBox.setToolTip("If checked, take screen shots for tutorials. Use Save Data to write them to disk.")
-    mainFormLayout.addRow("Enable Screenshots", self.enableScreenshotsFlagCheckBox)
+    self.headers = ["Name", "Hole", "Depth", "Position (RAS)"]
+    self.table.setHorizontalHeaderLabels(self.headers)
+    self.table.horizontalHeader().setStretchLastSection(True)
 
-    #
-    # scale factor for screen shots
-    #
-    self.screenshotScaleFactorSliderWidget = ctk.ctkSliderWidget()
-    self.screenshotScaleFactorSliderWidget.singleStep = 1.0
-    self.screenshotScaleFactorSliderWidget.minimum = 1.0
-    self.screenshotScaleFactorSliderWidget.maximum = 50.0
-    self.screenshotScaleFactorSliderWidget.value = 1.0
-    self.screenshotScaleFactorSliderWidget.setToolTip("Set scale factor for the screen shots.")
-    mainFormLayout.addRow("Screenshot scale factor", self.screenshotScaleFactorSliderWidget)
+    mainLayout.addWidget(self.table)
 
-    #
-    # Apply Button
-    #
-    self.applyButton = qt.QPushButton("Apply")
-    self.applyButton.toolTip = "Run the algorithm."
-    self.applyButton.enabled = False
-    mainFormLayout.addRow(self.applyButton)
+    self.onFiducialsSelected()
+
+    ##
+    ## input volume selector
+    ##
+    #self.inputSelector = slicer.qMRMLNodeComboBox()
+    #self.inputSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
+    #self.inputSelector.addAttribute( "vtkMRMLScalarVolumeNode", "LabelMap", 0 )
+    #self.inputSelector.selectNodeUponCreation = True
+    #self.inputSelector.addEnabled = False
+    #self.inputSelector.removeEnabled = False
+    #self.inputSelector.noneEnabled = False
+    #self.inputSelector.showHidden = False
+    #self.inputSelector.showChildNodeTypes = False
+    #self.inputSelector.setMRMLScene( slicer.mrmlScene )
+    #self.inputSelector.setToolTip( "Pick the input to the algorithm." )
+    #mainFormLayout.addRow("Input Volume: ", self.inputSelector)
+
+    ##
+    ## scale factor for screen shots
+    ##
+    #self.screenshotScaleFactorSliderWidget = ctk.ctkSliderWidget()
+    #self.screenshotScaleFactorSliderWidget.singleStep = 1.0
+    #self.screenshotScaleFactorSliderWidget.minimum = 1.0
+    #self.screenshotScaleFactorSliderWidget.maximum = 50.0
+    #self.screenshotScaleFactorSliderWidget.value = 1.0
+    #self.screenshotScaleFactorSliderWidget.setToolTip("Set scale factor for the screen shots.")
+    #mainFormLayout.addRow("Screenshot scale factor", self.screenshotScaleFactorSliderWidget)
+
+    ##
+    ## Apply Button
+    ##
+    #self.applyButton = qt.QPushButton("Apply")
+    #self.applyButton.toolTip = "Run the algorithm."
+    #self.applyButton.enabled = False
+    #mainFormLayout.addRow(self.applyButton)
 
     # connections
-    self.applyButton.connect('clicked(bool)', self.onApplyButton)
-    self.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
-    self.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    #self.applyButton.connect('clicked(bool)', self.onApplyButton)
+    #self.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
 
     # Add vertical spacer
     self.layout.addStretch(1)
@@ -216,15 +228,65 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
   def cleanup(self):
     pass
 
+
+  def updateTable(self):
+
+    print "updateTable() is called"
+    if not self.targetFiducialsNode:
+      self.table.clear()
+    else:
+      self.tableData = []
+      nOfControlPoints = self.targetFiducialsNode.GetNumberOfFiducials()
+
+      if self.table.rowCount != nOfControlPoints:
+        self.table.setRowCount(nOfControlPoints)
+
+      for i in range(nOfControlPoints):
+
+        label = self.targetFiducialsNode.GetNthFiducialLabel(i)
+        pos = [0.0, 0.0, 0.0]
+
+        self.targetFiducialsNode.GetNthFiducialPosition(i,pos)
+        posstr = '(%.3f, %.3f, %.3f)' % (pos[0], pos[1], pos[2])
+        cellLabel = qt.QTableWidgetItem(label)
+        cellIndex = qt.QTableWidgetItem('')
+        cellDepth = qt.QTableWidgetItem('')
+        cellPosition = qt.QTableWidgetItem(posstr)
+        row = [cellLabel, cellIndex, cellDepth, cellPosition]
+
+        self.table.setItem(i, 0, row[0])
+        self.table.setItem(i, 1, row[1])
+        self.table.setItem(i, 2, row[2])
+        self.table.setItem(i, 3, row[3])
+
+        self.tableData.append(row)
+        
+    self.table.show()
+
+  def onFiducialsSelected(self):
+    # Remove observer if previous node exists
+    if self.targetFiducialsNode and self.tag:
+      self.targetFiducialsNode.RemoveObserver(self.tag)
+
+    # Update selected node, add observer, and update control points
+    if self.targetFiducialsSelector.currentNode():
+      self.targetFiducialsNode = self.targetFiducialsSelector.currentNode()
+      self.tag = self.targetFiducialsNode.AddObserver('ModifiedEvent', self.onFiducialsUpdated)
+    self.updateTable()
+
+  def onFiducialsUpdated(self,caller,event):
+    if caller.IsA('vtkMRMLMarkupsFiducialNode') and event == 'ModifiedEvent':
+      self.updateTable()
+
   def onSelect(self):
-    self.applyButton.enabled = self.inputSelector.currentNode() and self.outputSelector.currentNode()
+    #self.applyButton.enabled = self.inputSelector.currentNode() and self.outputSelector.currentNode()
+    pass
 
   def onApplyButton(self):
     logic = NeedleGuideTemplateLogic()
     enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
-    screenshotScaleFactor = int(self.screenshotScaleFactorSliderWidget.value)
+    #screenshotScaleFactor = int(self.screenshotScaleFactorSliderWidget.value)
     print("Run the algorithm")
-    logic.run(self.inputSelector.currentNode(), self.outputSelector.currentNode(), enableScreenshotsFlag,screenshotScaleFactor)
 
   def onReload(self, moduleName="NeedleGuideTemplate"):
     # Generic reload method for any scripted module.
@@ -244,12 +306,14 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     self.fiducialConfigPathEdit.setText(path)
 
   def onShowTemplate(self):
+    print "onShowTemplate(self)"
     self.logic.setTemplateVisibility(self.showTemplateCheckBox.checked)
     
   def onShowFiducial(self):
     pass
 
   def onShowTrajectories(self):
+    print "onTrajectories(self)"
     self.logic.setNeedlePathVisibility(self.showTrajectoriesCheckBox.checked)
 
 #
@@ -404,74 +468,6 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     self.setModelSliceIntersectionVisibilityByID(self.needlePathModelNodeID, visibility)
     
     
-  def hasImageData(self,volumeNode):
-    """This is a dummy logic method that
-    returns true if the passed in volume
-    node has valid image data
-    """
-    if not volumeNode:
-      print('no volume node')
-      return False
-    if volumeNode.GetImageData() == None:
-      print('no image data')
-      return False
-    return True
-
-  def takeScreenshot(self,name,description,type=-1):
-    # show the message even if not taking a screen shot
-    self.delayDisplay(description)
-
-    if self.enableScreenshots == 0:
-      return
-
-    lm = slicer.app.layoutManager()
-    # switch on the type to get the requested window
-    widget = 0
-    if type == slicer.qMRMLScreenShotDialog.FullLayout:
-      # full layout
-      widget = lm.viewport()
-    elif type == slicer.qMRMLScreenShotDialog.ThreeD:
-      # just the 3D window
-      widget = lm.threeDWidget(0).threeDView()
-    elif type == slicer.qMRMLScreenShotDialog.Red:
-      # red slice window
-      widget = lm.sliceWidget("Red")
-    elif type == slicer.qMRMLScreenShotDialog.Yellow:
-      # yellow slice window
-      widget = lm.sliceWidget("Yellow")
-    elif type == slicer.qMRMLScreenShotDialog.Green:
-      # green slice window
-      widget = lm.sliceWidget("Green")
-    else:
-      # default to using the full window
-      widget = slicer.util.mainWindow()
-      # reset the type so that the node is set correctly
-      type = slicer.qMRMLScreenShotDialog.FullLayout
-
-    # grab and convert to vtk image data
-    qpixMap = qt.QPixmap().grabWidget(widget)
-    qimage = qpixMap.toImage()
-    imageData = vtk.vtkImageData()
-    slicer.qMRMLUtils().qImageToVtkImageData(qimage,imageData)
-
-    annotationLogic = slicer.modules.annotations.logic()
-    annotationLogic.CreateSnapShot(name, description, type, self.screenshotScaleFactor, imageData)
-
-  def run(self,inputVolume,outputVolume,enableScreenshots=0,screenshotScaleFactor=1):
-    """
-    Run the actual algorithm
-    """
-
-    self.delayDisplay('Running the aglorithm')
-
-    self.enableScreenshots = enableScreenshots
-    self.screenshotScaleFactor = screenshotScaleFactor
-
-    self.takeScreenshot('NeedleGuideTemplate-Start','Start',-1)
-
-    return True
-
-
 class NeedleGuideTemplateTest(ScriptedLoadableModuleTest):
   """
   This is the test case for your scripted module.
