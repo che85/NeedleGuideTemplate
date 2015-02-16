@@ -251,12 +251,16 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
         pos = [0.0, 0.0, 0.0]
 
         self.targetFiducialsNode.GetNthFiducialPosition(i,pos)
-        (indexX, indexY, depth) = self.logic.computeNearestPath(pos)
+        (indexX, indexY, depth, inRange) = self.logic.computeNearestPath(pos)
 
         posstr = '(%.3f, %.3f, %.3f)' % (pos[0], pos[1], pos[2])
         cellLabel = qt.QTableWidgetItem(label)
         cellIndex = qt.QTableWidgetItem('(%s, %s)' % (indexX, indexY))
-        cellDepth = qt.QTableWidgetItem('%.3f' % depth)
+        cellDepth = None
+        if inRange:
+          cellDepth = qt.QTableWidgetItem('%.3f' % depth)
+        else:
+          cellDepth = qt.QTableWidgetItem('(%.3f)' % depth)
         cellPosition = qt.QTableWidgetItem(posstr)
         row = [cellLabel, cellIndex, cellDepth, cellPosition]
 
@@ -358,6 +362,8 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
         
   def loadTemplateConfigFile(self, path):
     self.templateIndex = []
+    self.templateConfig = []
+    
     header = False
     reader = csv.reader(open(path, 'rb'))
     try:
@@ -374,93 +380,90 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
       print('file %s, line %d: %s' % (filename, reader.line_num, e))
 
     self.createTemplateModel()
-    self.createNeedlePathModel()
     self.setTemplateVisibility(0)
     self.setNeedlePathVisibility(0)
     self.updateTemplateVectors()
     
   def createTemplateModel(self):
     
-    mnode = slicer.mrmlScene.GetNodeByID(self.templateModelNodeID)
-    if mnode == None:
-      mnode = slicer.vtkMRMLModelNode()
-      mnode.SetName('NeedleGuideTemplate')
-      slicer.mrmlScene.AddNode(mnode)
-      self.templateModelNodeID = mnode.GetID()
-
-      modelDisplayNode = slicer.vtkMRMLModelDisplayNode()
-      #modelDisplayNode.SetColor(self.ModelColor)
-      slicer.mrmlScene.AddNode(modelDisplayNode)
-      mnode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
-      self.modelNodetag = mnode.AddObserver(slicer.vtkMRMLTransformableNode.TransformModifiedEvent,
-                                            self.onTemplateTransformUpdated)
-      
-    append = vtk.vtkAppendPolyData()
-    
-    for row in self.templateConfig:
-
-      lineSource = vtk.vtkLineSource()
-      lineSource.SetPoint1(row[0:3])
-      lineSource.SetPoint2(row[3:6])
- 
-      tubeFilter = vtk.vtkTubeFilter()
-      tubeFilter.SetInputConnection(lineSource.GetOutputPort())
-      tubeFilter.SetRadius(1.0)
-      tubeFilter.SetNumberOfSides(18)
-      tubeFilter.CappingOn()
-      tubeFilter.Update()
-
-      if vtk.VTK_MAJOR_VERSION <= 5:
-        append.AddInput(tubeFilter.GetOutput());
-      else:
-        append.AddInputData(tubeFilter.GetOutput());
-
-      append.Update()
-      mnode.SetAndObservePolyData(append.GetOutput())
-
-  def createNeedlePathModel(self):
-
-    mnode = slicer.mrmlScene.GetNodeByID(self.needlePathModelNodeID)
-    if mnode == None:
-      mnode = slicer.vtkMRMLModelNode()
-      mnode.SetName('NeedleGuideNeedlePath')
-      slicer.mrmlScene.AddNode(mnode)
-      self.needlePathModelNodeID = mnode.GetID()
-
-      modelDisplayNode = slicer.vtkMRMLModelDisplayNode()
-      slicer.mrmlScene.AddNode(modelDisplayNode)
-      mnode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
-      
-    append = vtk.vtkAppendPolyData()
     self.templatePathVectors = []
     self.templatePathOrigins = []
+
+    tempModelNode = slicer.mrmlScene.GetNodeByID(self.templateModelNodeID)
+    if tempModelNode == None:
+      tempModelNode = slicer.vtkMRMLModelNode()
+      tempModelNode.SetName('NeedleGuideTemplate')
+      slicer.mrmlScene.AddNode(tempModelNode)
+      self.templateModelNodeID = tempModelNode.GetID()
+
+      dnode = slicer.vtkMRMLModelDisplayNode()
+      #dnode.SetColor(self.ModelColor)
+      slicer.mrmlScene.AddNode(dnode)
+      tempModelNode.SetAndObserveDisplayNodeID(dnode.GetID())
+      self.modelNodetag = tempModelNode.AddObserver(slicer.vtkMRMLTransformableNode.TransformModifiedEvent,
+                                                    self.onTemplateTransformUpdated)
+      
+    pathModelNode = slicer.mrmlScene.GetNodeByID(self.needlePathModelNodeID)
+    if pathModelNode == None:
+      pathModelNode = slicer.vtkMRMLModelNode()
+      pathModelNode.SetName('NeedleGuideNeedlePath')
+      slicer.mrmlScene.AddNode(pathModelNode)
+      self.needlePathModelNodeID = pathModelNode.GetID()
+
+      dnode = slicer.vtkMRMLModelDisplayNode()
+      slicer.mrmlScene.AddNode(dnode)
+      pathModelNode.SetAndObserveDisplayNodeID(dnode.GetID())
+      
+    pathModelAppend = vtk.vtkAppendPolyData()
+    tempModelAppend = vtk.vtkAppendPolyData()
     
     for row in self.templateConfig:
 
-      lineSource = vtk.vtkLineSource()
-      v = numpy.array([row[3]-row[0], row[4]-row[1], row[5]-row[2]])
+      p1 = numpy.array(row[0:3])
+      p2 = numpy.array(row[3:6])
+      tempLineSource = vtk.vtkLineSource()
+      tempLineSource.SetPoint1(p1)
+      tempLineSource.SetPoint2(p2)
+ 
+      tempTubeFilter = vtk.vtkTubeFilter()
+      tempTubeFilter.SetInputConnection(tempLineSource.GetOutputPort())
+      tempTubeFilter.SetRadius(1.0)
+      tempTubeFilter.SetNumberOfSides(18)
+      tempTubeFilter.CappingOn()
+      tempTubeFilter.Update()
+
+      pathLineSource = vtk.vtkLineSource()
+      v = p2-p1
       nl = numpy.linalg.norm(v)
       n = v/nl  # normal vector
       l = row[6]
-      lineSource.SetPoint1(row[3], row[4], row[5])
-      lineSource.SetPoint2(row[0]+l*n[0], row[1]+l*n[1], row[2]+l*n[2])
-      self.templatePathOrigins.append([row[3], row[4], row[5], 1.0])
+      p3 = p1 + l * n
+      pathLineSource.SetPoint1(p1)
+      pathLineSource.SetPoint2(p3)
+
+      self.templatePathOrigins.append([row[0], row[1], row[2], 1.0])
       self.templatePathVectors.append([n[0], n[1], n[2], 1.0])
+      self.templateMaxDepth.append(row[6])
  
-      tubeFilter = vtk.vtkTubeFilter()
-      tubeFilter.SetInputConnection(lineSource.GetOutputPort())
-      tubeFilter.SetRadius(1)
-      tubeFilter.SetNumberOfSides(20)
-      tubeFilter.CappingOn()
-      tubeFilter.Update()
+      pathTubeFilter = vtk.vtkTubeFilter()
+      pathTubeFilter.SetInputConnection(pathLineSource.GetOutputPort())
+      pathTubeFilter.SetRadius(0.8)
+      pathTubeFilter.SetNumberOfSides(18)
+      pathTubeFilter.CappingOn()
+      pathTubeFilter.Update()
 
       if vtk.VTK_MAJOR_VERSION <= 5:
-        append.AddInput(tubeFilter.GetOutput());
+        tempModelAppend.AddInput(tempTubeFilter.GetOutput());
+        pathModelAppend.AddInput(pathTubeFilter.GetOutput());
       else:
-        append.AddInputData(tubeFilter.GetOutput());
+        tempModelAppend.AddInputData(tempTubeFilter.GetOutput());
+        pathModelAppend.AddInputData(pathTubeFilter.GetOutput());
 
-      append.Update()
-      mnode.SetAndObservePolyData(append.GetOutput())
+      tempModelAppend.Update()
+      tempModelNode.SetAndObservePolyData(tempModelAppend.GetOutput())
+      pathModelAppend.Update()
+      pathModelNode.SetAndObservePolyData(pathModelAppend.GetOutput())
+
 
   def setModelVisibilityByID(self, id, visible):
 
@@ -523,12 +526,13 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
 
   def computeNearestPath(self, pos):
     # Identify the nearest path and return the index for self.templateConfig[] and depth
-    #  (index_x, index_y, depth) = computeNearestPath()
+    #  (index_x, index_y, depth, inRange) = computeNearestPath()
 
     p = numpy.array(pos)
 
     minMag2 = numpy.Inf
-    minDepth = -1.0
+    minDepth = 0.0
+    minIndex = -1
 
     ## TODO: Can following loop can be described by matrix calculation?
     i = 0
@@ -544,17 +548,17 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
         minDepth = aproj
       i = i + 1
 
-    indexX = ''
-    indexY = ''
+    indexX = '--'
+    indexY = '--'
+    inRange = False
 
-    if minDepth < 0.0:
-      indexX = '--'
-      indexY = '--'
-      minDepth = 0.0
-    else:
+    if minIndex >= 0:
       indexX = self.templateIndex[minIndex][0]
       indexY = self.templateIndex[minIndex][1]
-    return (indexX, indexY, minDepth)
+      if minDepth > 0 and minDepth < self.templateMaxDepth[minIndex]:
+        inRange = True
+
+    return (indexX, indexY, minDepth, inRange)
       
     
 class NeedleGuideTemplateTest(ScriptedLoadableModuleTest):
