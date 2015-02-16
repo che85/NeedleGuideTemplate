@@ -173,9 +173,11 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     # Target List Table
     #
     self.table = qt.QTableWidget(1, 4)
+    self.table.setSelectionBehavior(qt.QAbstractItemView.SelectRows)
+    self.table.setSelectionMode(qt.QAbstractItemView.SingleSelection)
     #self.table.setSizePolicy(qt.QSizePolicy.Expanding, qt.QSizePolicy.Expanding)
 
-    self.headers = ["Name", "Hole", "Depth", "Position (RAS)"]
+    self.headers = ["Name", "Hole", "Depth (mm)", "Position (RAS)"]
     self.table.setHorizontalHeaderLabels(self.headers)
     self.table.horizontalHeader().setStretchLastSection(True)
 
@@ -234,7 +236,9 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     print "updateTable() is called"
     if not self.targetFiducialsNode:
       self.table.clear()
+      self.table.setHorizontalHeaderLabels(self.headers)
     else:
+      
       self.tableData = []
       nOfControlPoints = self.targetFiducialsNode.GetNumberOfFiducials()
 
@@ -247,10 +251,12 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
         pos = [0.0, 0.0, 0.0]
 
         self.targetFiducialsNode.GetNthFiducialPosition(i,pos)
+        (indexX, indexY, depth) = self.logic.computeNearestPath(pos)
+
         posstr = '(%.3f, %.3f, %.3f)' % (pos[0], pos[1], pos[2])
         cellLabel = qt.QTableWidgetItem(label)
-        cellIndex = qt.QTableWidgetItem('')
-        cellDepth = qt.QTableWidgetItem('')
+        cellIndex = qt.QTableWidgetItem('(%s, %s)' % (indexX, indexY))
+        cellDepth = qt.QTableWidgetItem('%.3f' % depth)
         cellPosition = qt.QTableWidgetItem(posstr)
         row = [cellLabel, cellIndex, cellDepth, cellPosition]
 
@@ -299,6 +305,7 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     path = qt.QFileDialog.getOpenFileName(None, 'Open Template File', path, '*.csv')
     self.templateConfigPathEdit.setText(path)
     self.logic.loadTemplateConfigFile(path)
+    self.updateTable()
 
   def onFiducialConfigButton(self):
     path = self.fiducialConfigPathEdit.text
@@ -341,11 +348,16 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     self.templateMaxDepth = []
     self.templateModelNodeID = ''
     self.needlePathModelNodeID = ''
+    self.templatePathOrigins = []  ## Origins of needle paths
+    self.templatePathVectors = []  ## Normal vectors of needle paths 
+    self.pathOrigins = []  ## Origins of needle paths (after transformation by parent transform node)
+    self.pathVectors = []  ## Normal vectors of needle paths (after transformation by parent transform node)
 
   def loadFiducialConfigFile(self, path):
     reader = csv.reader(open(path, 'rb'))
         
   def loadTemplateConfigFile(self, path):
+    self.templateIndex = []
     header = False
     reader = csv.reader(open(path, 'rb'))
     try:
@@ -361,11 +373,11 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     except csv.Error as e:
       print('file %s, line %d: %s' % (filename, reader.line_num, e))
 
-    print self.templateConfig
     self.createTemplateModel()
     self.createNeedlePathModel()
     self.setTemplateVisibility(0)
     self.setNeedlePathVisibility(0)
+    self.updateTemplateVectors()
     
   def createTemplateModel(self):
     
@@ -380,19 +392,21 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
       #modelDisplayNode.SetColor(self.ModelColor)
       slicer.mrmlScene.AddNode(modelDisplayNode)
       mnode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
+      self.modelNodetag = mnode.AddObserver(slicer.vtkMRMLTransformableNode.TransformModifiedEvent,
+                                            self.onTemplateTransformUpdated)
       
     append = vtk.vtkAppendPolyData()
     
     for row in self.templateConfig:
 
       lineSource = vtk.vtkLineSource()
-      lineSource.SetPoint1(row[0], row[1], row[2])
-      lineSource.SetPoint2(row[3], row[4], row[5])
+      lineSource.SetPoint1(row[0:3])
+      lineSource.SetPoint2(row[3:6])
  
       tubeFilter = vtk.vtkTubeFilter()
       tubeFilter.SetInputConnection(lineSource.GetOutputPort())
       tubeFilter.SetRadius(1.0)
-      tubeFilter.SetNumberOfSides(20)
+      tubeFilter.SetNumberOfSides(18)
       tubeFilter.CappingOn()
       tubeFilter.Update()
 
@@ -418,6 +432,8 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
       mnode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
       
     append = vtk.vtkAppendPolyData()
+    self.templatePathVectors = []
+    self.templatePathOrigins = []
     
     for row in self.templateConfig:
 
@@ -428,6 +444,8 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
       l = row[6]
       lineSource.SetPoint1(row[3], row[4], row[5])
       lineSource.SetPoint2(row[0]+l*n[0], row[1]+l*n[1], row[2]+l*n[2])
+      self.templatePathOrigins.append([row[3], row[4], row[5], 1.0])
+      self.templatePathVectors.append([n[0], n[1], n[2], 1.0])
  
       tubeFilter = vtk.vtkTubeFilter()
       tubeFilter.SetInputConnection(lineSource.GetOutputPort())
@@ -466,12 +484,83 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
   def setNeedlePathVisibility(self, visibility):
     self.setModelVisibilityByID(self.needlePathModelNodeID, visibility)
     self.setModelSliceIntersectionVisibilityByID(self.needlePathModelNodeID, visibility)
+
+    #def onFiducialsUpdated(self,caller,event):
+  def onTemplateTransformUpdated(self,caller,event):
+    print 'onTemplateTransformUpdated()'
+    self.updateTemplateVectors()
+
+  def updateTemplateVectors(self):
+    print 'updateTemplateVectors()'
+
+    mnode = slicer.mrmlScene.GetNodeByID(self.templateModelNodeID)
+    if mnode == None:
+      return 0
+    tnode = mnode.GetParentTransformNode()
+
+    trans = vtk.vtkMatrix4x4()
+    if tnode != None:
+      tnode.GetMatrixTransformToWorld(trans);
+    else:
+      trans.Identity()
+
+    # Calculate offset
+    zero = [0.0, 0.0, 0.0, 1.0]
+    offset = []
+    offset = trans.MultiplyDoublePoint(zero)
     
+    self.pathOrigins = []
+    self.pathVectors = []
+
+    i = 0
+    for orig in self.templatePathOrigins:
+      torig = trans.MultiplyDoublePoint(orig)
+      self.pathOrigins.append(numpy.array(torig[0:3]))
+      vec = self.templatePathVectors[i]
+      tvec = trans.MultiplyDoublePoint(vec)
+      self.pathVectors.append(numpy.array([tvec[0]-offset[0], tvec[1]-offset[1], tvec[2]-offset[2]]))
+      i = i + 1
+
+  def computeNearestPath(self, pos):
+    # Identify the nearest path and return the index for self.templateConfig[] and depth
+    #  (index_x, index_y, depth) = computeNearestPath()
+
+    p = numpy.array(pos)
+
+    minMag2 = numpy.Inf
+    minDepth = -1.0
+
+    ## TODO: Can following loop can be described by matrix calculation?
+    i = 0
+    for orig in self.pathOrigins:
+      vec = self.pathVectors[i]
+      op = p - orig
+      aproj = numpy.inner(op, vec)
+      perp = op-aproj*vec
+      mag2 = numpy.vdot(perp,perp) # magnitude^2
+      if mag2 < minMag2:
+        minMag2 = mag2
+        minIndex = i
+        minDepth = aproj
+      i = i + 1
+
+    indexX = ''
+    indexY = ''
+
+    if minDepth < 0.0:
+      indexX = '--'
+      indexY = '--'
+      minDepth = 0.0
+    else:
+      indexX = self.templateIndex[minIndex][0]
+      indexY = self.templateIndex[minIndex][1]
+    return (indexX, indexY, minDepth)
+      
     
 class NeedleGuideTemplateTest(ScriptedLoadableModuleTest):
   """
-  This is the test case for your scripted module.
-  Uses ScriptedLoadableModuleTest base class, available at:
+  This is the test case for your scripted Uses.
+  module ScriptedLoadableModuleTest base class, available at:
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
