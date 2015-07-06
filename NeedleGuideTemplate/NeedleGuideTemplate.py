@@ -183,6 +183,9 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
 
     mainLayout.addWidget(self.table)
 
+    self.table.connect('cellClicked(int, int)', self.onTableSelected)
+    
+
     self.onFiducialsSelected()
 
     ##
@@ -353,6 +356,29 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     print "onOpenWindowButton(self) is called!!!"
     self.ex = ProjectionWindow()
     self.ex.show()
+
+  def onTableSelected(self, row, column):
+    print "onTableSelected(%d, %d)" % (row, column)
+    pos = [0.0, 0.0, 0.0]
+    label = self.targetFiducialsNode.GetNthFiducialLabel(row)
+    self.targetFiducialsNode.GetNthFiducialPosition(row,pos)
+    (indexX, indexY, depth, inRange) = self.logic.computeNearestPath(pos)
+
+    print "index = " 
+    print indexX
+    print indexY
+
+    d = 20
+    Letters={'A': .5,'B': 1.5,'C': 2.5,'D': 3.5,'E': 4.5,'F': 5.5,'G': 6.5,'H': 7.5,'I': 8.5,'J':9.5,'K':10.5,'L':11.5,'M':12.5,'N':13.5}
+    Numbers={'-7' : .5,'-6' : 1.5,'-5' : 2.5,'-4' : 3.5,'-3' : 4.5,'-2' : 5.5,'-1' : 6.5, '0' : 7.5, '1' : 8.5, '2' : 9.5, '3' : 10.5, '4' : 11.5, '5' : 12.5, '6' : 13.5, '7' : 14.5}
+
+    ConvertedL = Letters[indexX]
+    ConvertedN = Numbers[indexY]
+    x = ConvertedL * d + 50
+    y = ConvertedN * d
+
+    self.ex.setXY(x, y)		
+    self.ex.repaint()
 
 
 
