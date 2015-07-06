@@ -224,6 +224,28 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     #self.applyButton.connect('clicked(bool)', self.onApplyButton)
     #self.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
 
+
+    #--------------------------------------------------
+    #
+    # Projection
+    #
+    projectionCollapsibleButton = ctk.ctkCollapsibleButton()
+    projectionCollapsibleButton.text = "Projection"
+
+    self.layout.addWidget(projectionCollapsibleButton)
+    projectionLayout = qt.QVBoxLayout(projectionCollapsibleButton)
+
+    projectionCollapsibleButton.collapsed = False
+
+    self.openWindowButton = qt.QPushButton("OpenWindow")
+    self.openWindowButton.toolTip = "Run the algorithm."
+    self.openWindowButton.enabled = True
+    projectionLayout.addWidget(self.openWindowButton)
+  
+
+    self.openWindowButton.connect('clicked(bool)', self.onOpenWindowButton)
+
+
     # Add vertical spacer
     self.layout.addStretch(1)
 
@@ -326,6 +348,13 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
   def onShowTrajectories(self):
     print "onTrajectories(self)"
     self.logic.setNeedlePathVisibility(self.showTrajectoriesCheckBox.checked)
+
+  def onOpenWindowButton(self):
+    print "onOpenWindowButton(self) is called!!!"
+    self.ex = ProjectionWindow()
+    self.ex.show()
+
+
 
 #
 # NeedleGuideTemplateLogic
@@ -614,3 +643,80 @@ class NeedleGuideTemplateTest(ScriptedLoadableModuleTest):
     logic = NeedleGuideTemplateLogic()
     self.assertTrue( logic.hasImageData(volumeNode) )
     self.delayDisplay('Test passed!')
+
+
+
+class ProjectionWindow(qt.QWidget):
+
+  horizontal = 0
+  vertical = 0
+  
+  def __init__(self, parent=None):
+    qt.QWidget.__init__(self, parent)
+    self.initUI()
+    
+  def initUI(self):
+    self.setGeometry(0, 0, 300, 330)
+    self.setWindowTitle('Crosshair')
+    
+  def paintEvent(self, e):
+        
+    qp = qt.QPainter()
+    qp.begin(self)
+    self.drawLines(qp)
+    qp.end()
+        
+  def setXY(self, x, y):
+    self.horizontal = x
+    self.vertical = y
+
+  def drawLines(self, qp):
+
+    pen = qt.QPen(qt.Qt.red, 2, qt.Qt.SolidLine)
+    
+    qp.setPen(pen)
+    qp.drawLine(0, self.horizontal, 300, self.horizontal)
+    
+    qp.setPen(pen)
+    qp.drawLine(self.vertical, 50, self.vertical, 330)
+  
+    pen.setStyle(qt.Qt.DashLine)
+    pen.setColor(qt.Qt.black)
+    qp.setPen(pen)
+    qp.drawLine(0, 50, 300, 50)
+    
+    pen.setStyle(qt.Qt.DashLine)
+    pen.setColor(qt.Qt.black)
+    qp.setPen(pen)
+    qp.drawLine(0, 50, 0, 90)
+    
+    pen.setStyle(qt.Qt.DashLine)
+    pen.setColor(qt.Qt.black)
+    qp.setPen(pen)
+    qp.drawLine(0, 330, 40, 330)
+    
+    pen.setStyle(qt.Qt.DashLine)
+    pen.setColor(qt.Qt.black)
+    qp.setPen(pen)
+    qp.drawLine(0, 290, 0, 330)
+    
+    #pen.setStyle(qt.Qt.DashLine)
+    #pen.setColor(qt.Qt.black)
+    #qp.setPen(pen)
+    #qp.drawLine(300, 0, 260, 0)
+    
+    pen.setStyle(qt.Qt.DashLine)
+    pen.setColor(qt.Qt.black)
+    qp.setPen(pen)
+    qp.drawLine(300, 50, 300, 90)
+    
+    pen.setStyle(qt.Qt.DashLine)
+    pen.setColor(qt.Qt.black)
+    qp.setPen(pen)
+    qp.drawLine(300, 290, 300, 330)
+    
+    pen.setStyle(qt.Qt.DashLine)
+    pen.setColor(qt.Qt.black)
+    qp.setPen(pen)
+    qp.drawLine(300, 330, 260, 330)
+    
