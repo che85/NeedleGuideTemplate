@@ -1,5 +1,4 @@
 import os
-import unittest
 import csv
 import numpy
 from __main__ import vtk, qt, ctk, slicer
@@ -35,204 +34,109 @@ class NeedleGuideTemplate(ScriptedLoadableModule):
 # NeedleGuideTemplateWidget
 #
 
-class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
+class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin):
   """Uses ScriptedLoadableModuleWidget base class, available at:
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
+  DEFAULT_TEMPLATE_CONFIG_FILE_NAME = "Config/ProstateTemplate.csv"
+
+  def __init__(self, parent=None):
+    ScriptedLoadableModuleWidget.__init__(self, parent)
+    self.modulePath = os.path.dirname(slicer.util.modulePath(self.moduleName))
+    self.defaultTemplateFile = os.path.join(self.modulePath, self.DEFAULT_TEMPLATE_CONFIG_FILE_NAME)
+
+  def cleanup(self):
+    slicer.mrmlScene.Clear(0)
+
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
-    # Instantiate and connect widgets ...
 
-    self.logic = NeedleGuideTemplateLogic(None)
+    self.logic = NeedleGuideTemplateLogic()
+    self.setupMainSection()
+    self.setupProjectionSection()
 
-    #--------------------------------------------------
-    #
-    # Configuration
-    #
-    configCollapsibleButton = ctk.ctkCollapsibleButton()
-    configCollapsibleButton.text = "Configuration"
-    self.layout.addWidget(configCollapsibleButton)
+    self.setupConnections()
+    self.onFiducialsSelected()
 
-    configFormLayout = qt.QFormLayout(configCollapsibleButton)
+    self.mainCollapsibleButton.setEnabled(self.logic.loadTemplateConfigFile(self.defaultTemplateFile))
+    self.updateTable()
+    self.layout.addStretch(1)
 
-    configCollapsibleButton.collapsed = True
+  def setupMainSection(self):
+    self.mainCollapsibleButton = ctk.ctkCollapsibleButton()
+    self.mainCollapsibleButton.text = "Main"
 
-    templateConfigPathLayout = qt.QHBoxLayout()
-    
-    self.templateConfigPathEdit = qt.QLineEdit()
-    self.templateConfigPathEdit.text = ""
-    self.templateConfigPathEdit.readOnly = False
-    self.templateConfigPathEdit.frame = True
-    self.templateConfigPathEdit.styleSheet = "QLineEdit { background:transparent; }"
-    self.templateConfigPathEdit.cursor = qt.QCursor(qt.Qt.IBeamCursor)
-    templateConfigPathLayout.addWidget(self.templateConfigPathEdit)
-
-    self.templateConfigButton = qt.QPushButton("...")
-    self.templateConfigButton.toolTip = "Choose a template configuration file"
-    self.templateConfigButton.enabled = True
-    self.templateConfigButton.connect('clicked(bool)', self.onTemplateConfigButton)
-    templateConfigPathLayout.addWidget(self.templateConfigButton)
-
-    configFormLayout.addRow("Template Config File: ", templateConfigPathLayout)
-
-    fiducialConfigPathLayout = qt.QHBoxLayout()
-    
-    self.fiducialConfigPathEdit = qt.QLineEdit()
-    self.fiducialConfigPathEdit.text = ""
-    self.fiducialConfigPathEdit.readOnly = False
-    self.fiducialConfigPathEdit.frame = True
-    self.fiducialConfigPathEdit.styleSheet = "QLineEdit { background:transparent; }"
-    self.fiducialConfigPathEdit.cursor = qt.QCursor(qt.Qt.IBeamCursor)
-    fiducialConfigPathLayout.addWidget(self.fiducialConfigPathEdit)
-
-    self.fiducialConfigButton = qt.QPushButton("...")
-    self.fiducialConfigButton.toolTip = "Choose a fiducial configuration file"
-    self.fiducialConfigButton.enabled = True
-    self.fiducialConfigButton.connect('clicked(bool)', self.onFiducialConfigButton)
-    fiducialConfigPathLayout.addWidget(self.fiducialConfigButton)
-
-    configFormLayout.addRow("Fiducial Config File: ", fiducialConfigPathLayout)
-
-    #
-    # Main Area
-    #
-    mainCollapsibleButton = ctk.ctkCollapsibleButton()
-    mainCollapsibleButton.text = "Main"
-
-    self.layout.addWidget(mainCollapsibleButton)
-
-    # Layout within the dummy collapsible button
-    #mainFormLayout = qt.QFormLayout(mainCollapsibleButton)
-    mainLayout = qt.QVBoxLayout(mainCollapsibleButton)
+    self.layout.addWidget(self.mainCollapsibleButton)
 
     mainFormFrame = qt.QFrame()
     mainFormLayout = qt.QFormLayout(mainFormFrame)
-    mainLayout.addWidget(mainFormFrame)
-    
+
     self.showTemplateCheckBox = qt.QCheckBox()
     self.showTemplateCheckBox.checked = 0
     self.showTemplateCheckBox.setToolTip("Show 3D model of the template")
     mainFormLayout.addRow("Show Template:", self.showTemplateCheckBox)
-    self.showTemplateCheckBox.connect('toggled(bool)', self.onShowTemplate)
 
     self.showFiducialCheckBox = qt.QCheckBox()
     self.showFiducialCheckBox.checked = 0
     self.showFiducialCheckBox.setToolTip("Show 3D model of the fiducial")
     mainFormLayout.addRow("Show Fiducial:", self.showFiducialCheckBox)
-    self.showFiducialCheckBox.connect('toggled(bool)', self.onShowFiducial)
 
     self.showTrajectoriesCheckBox = qt.QCheckBox()
     self.showTrajectoriesCheckBox.checked = 0
     self.showTrajectoriesCheckBox.setToolTip("Show 3D model of the fiducial")
     mainFormLayout.addRow("Show Trajectories:", self.showTrajectoriesCheckBox)
-    self.showTrajectoriesCheckBox.connect('toggled(bool)', self.onShowTrajectories)
-    
+
     #
     # input volume selector
     #
     self.targetFiducialsSelector = slicer.qMRMLNodeComboBox()
-    self.targetFiducialsSelector.nodeTypes = ( ("vtkMRMLMarkupsFiducialNode"), "" )
+    self.targetFiducialsSelector.nodeTypes = (("vtkMRMLMarkupsFiducialNode"), "")
     self.targetFiducialsSelector.selectNodeUponCreation = True
     self.targetFiducialsSelector.addEnabled = True
     self.targetFiducialsSelector.removeEnabled = True
     self.targetFiducialsSelector.noneEnabled = False
     self.targetFiducialsSelector.showHidden = False
     self.targetFiducialsSelector.showChildNodeTypes = False
-    self.targetFiducialsSelector.setMRMLScene( slicer.mrmlScene )
-    self.targetFiducialsSelector.setToolTip( "Select Markups for targets" )
+    self.targetFiducialsSelector.setMRMLScene(slicer.mrmlScene)
+    self.targetFiducialsSelector.setToolTip("Select Markups for targets")
     mainFormLayout.addRow("Targets: ", self.targetFiducialsSelector)
 
     self.targetFiducialsNode = None
-    self.targetFiducialsSelector.connect("currentNodeChanged(vtkMRMLNode*)",
-                                         self.onFiducialsSelected)
-    
+
     #
     # Target List Table
     #
     self.table = qt.QTableWidget(1, 4)
     self.table.setSelectionBehavior(qt.QAbstractItemView.SelectRows)
     self.table.setSelectionMode(qt.QAbstractItemView.SingleSelection)
-    #self.table.setSizePolicy(qt.QSizePolicy.Expanding, qt.QSizePolicy.Expanding)
-
+    # self.table.setSizePolicy(qt.QSizePolicy.Expanding, qt.QSizePolicy.Expanding)
     self.headers = ["Name", "Hole", "Depth (mm)", "Position (RAS)"]
     self.table.setHorizontalHeaderLabels(self.headers)
     self.table.horizontalHeader().setStretchLastSection(True)
 
+    mainLayout = qt.QVBoxLayout(self.mainCollapsibleButton)
+    mainLayout.addWidget(mainFormFrame)
     mainLayout.addWidget(self.table)
 
-    self.table.connect('cellClicked(int, int)', self.onTableSelected)
-    
-
-    self.onFiducialsSelected()
-
-    ##
-    ## input volume selector
-    ##
-    #self.inputSelector = slicer.qMRMLNodeComboBox()
-    #self.inputSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
-    #self.inputSelector.addAttribute( "vtkMRMLScalarVolumeNode", "LabelMap", 0 )
-    #self.inputSelector.selectNodeUponCreation = True
-    #self.inputSelector.addEnabled = False
-    #self.inputSelector.removeEnabled = False
-    #self.inputSelector.noneEnabled = False
-    #self.inputSelector.showHidden = False
-    #self.inputSelector.showChildNodeTypes = False
-    #self.inputSelector.setMRMLScene( slicer.mrmlScene )
-    #self.inputSelector.setToolTip( "Pick the input to the algorithm." )
-    #mainFormLayout.addRow("Input Volume: ", self.inputSelector)
-
-    ##
-    ## scale factor for screen shots
-    ##
-    #self.screenshotScaleFactorSliderWidget = ctk.ctkSliderWidget()
-    #self.screenshotScaleFactorSliderWidget.singleStep = 1.0
-    #self.screenshotScaleFactorSliderWidget.minimum = 1.0
-    #self.screenshotScaleFactorSliderWidget.maximum = 50.0
-    #self.screenshotScaleFactorSliderWidget.value = 1.0
-    #self.screenshotScaleFactorSliderWidget.setToolTip("Set scale factor for the screen shots.")
-    #mainFormLayout.addRow("Screenshot scale factor", self.screenshotScaleFactorSliderWidget)
-
-    ##
-    ## Apply Button
-    ##
-    #self.applyButton = qt.QPushButton("Apply")
-    #self.applyButton.toolTip = "Run the algorithm."
-    #self.applyButton.enabled = False
-    #mainFormLayout.addRow(self.applyButton)
-
-    # connections
-    #self.applyButton.connect('clicked(bool)', self.onApplyButton)
-    #self.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
-
-
-    #--------------------------------------------------
-    #
-    # Projection
-    #
+  def setupProjectionSection(self):
     projectionCollapsibleButton = ctk.ctkCollapsibleButton()
     projectionCollapsibleButton.text = "Projection"
-
     self.layout.addWidget(projectionCollapsibleButton)
     projectionLayout = qt.QVBoxLayout(projectionCollapsibleButton)
-
     projectionCollapsibleButton.collapsed = False
-
     self.openWindowButton = qt.QPushButton("OpenWindow")
     self.openWindowButton.toolTip = "Run the algorithm."
     self.openWindowButton.enabled = True
     projectionLayout.addWidget(self.openWindowButton)
-  
 
+  def setupConnections(self):
+    self.showTemplateCheckBox.connect('toggled(bool)', self.onShowTemplate)
+    self.showFiducialCheckBox.connect('toggled(bool)', self.onShowFiducial)
+    self.showTrajectoriesCheckBox.connect('toggled(bool)', self.onShowTrajectories)
+    self.targetFiducialsSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onFiducialsSelected)
+    self.table.connect('cellClicked(int, int)', self.onTableSelected)
     self.openWindowButton.connect('clicked(bool)', self.onOpenWindowButton)
-
-
-    # Add vertical spacer
-    self.layout.addStretch(1)
-
-  def cleanup(self):
-    pass
-
 
   def updateTable(self):
 
@@ -259,7 +163,6 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
         posstr = '(%.3f, %.3f, %.3f)' % (pos[0], pos[1], pos[2])
         cellLabel = qt.QTableWidgetItem(label)
         cellIndex = qt.QTableWidgetItem('(%s, %s)' % (indexX, indexY))
-        cellDepth = None
         if inRange:
           cellDepth = qt.QTableWidgetItem('%.3f' % depth)
         else:
@@ -306,18 +209,6 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget):
     # ModuleWizard will subsitute correct default moduleName.
 
     globals()[moduleName] = slicer.util.reloadScriptedModule(moduleName)
-
-  def onTemplateConfigButton(self):
-    path = self.templateConfigPathEdit.text
-    path = qt.QFileDialog.getOpenFileName(None, 'Open Template File', path, '*.csv')
-    self.templateConfigPathEdit.setText(path)
-    self.logic.loadTemplateConfigFile(path)
-    self.updateTable()
-
-  def onFiducialConfigButton(self):
-    path = self.fiducialConfigPathEdit.text
-    filename = qt.QFileDialog.getOpenFileName(None, 'Open Fiducial File', path, '.csv')
-    self.fiducialConfigPathEdit.setText(path)
 
   def onShowTemplate(self):
     print "onShowTemplate(self)"
@@ -374,7 +265,7 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
-  def __init__(self, parent):
+  def __init__(self, parent=None):
     ScriptedLoadableModuleLogic.__init__(self, parent)
 
     self.fiducialName = ''
@@ -390,9 +281,6 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     self.pathOrigins = []  ## Origins of needle paths (after transformation by parent transform node)
     self.pathVectors = []  ## Normal vectors of needle paths (after transformation by parent transform node)
 
-  def loadFiducialConfigFile(self, path):
-    reader = csv.reader(open(path, 'rb'))
-        
   def loadTemplateConfigFile(self, path):
     self.templateIndex = []
     self.templateConfig = []
@@ -411,11 +299,13 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
           header = True
     except csv.Error as e:
       print('file %s, line %d: %s' % (filename, reader.line_num, e))
+      return False
 
     self.createTemplateModel()
     self.setTemplateVisibility(0)
     self.setNeedlePathVisibility(0)
     self.updateTemplateVectors()
+    return True
     
   def createTemplateModel(self):
     
