@@ -201,16 +201,6 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin)
     if caller.IsA('vtkMRMLMarkupsFiducialNode') and event == 'ModifiedEvent':
       self.updateTable()
 
-  def onSelect(self):
-    #self.applyButton.enabled = self.inputSelector.currentNode() and self.outputSelector.currentNode()
-    pass
-
-  def onApplyButton(self):
-    logic = NeedleGuideTemplateLogic()
-    enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
-    #screenshotScaleFactor = int(self.screenshotScaleFactorSliderWidget.value)
-    print("Run the algorithm")
-
   def onReload(self, moduleName="NeedleGuideTemplate"):
     # Generic reload method for any scripted module.
     # ModuleWizard will subsitute correct default moduleName.
@@ -236,7 +226,6 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin)
   def onTableSelected(self, row, column):
     print "onTableSelected(%d, %d)" % (row, column)
     pos = [0.0, 0.0, 0.0]
-    label = self.targetFiducialsNode.GetNthFiducialLabel(row)
     self.targetFiducialsNode.GetNthFiducialPosition(row,pos)
     (indexX, indexY, depth, inRange) = self.logic.computeNearestPath(pos)
 
@@ -255,7 +244,6 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin)
 
     self.ex.setXY(x, y)		
     self.ex.repaint()
-
 
 
 #
@@ -305,7 +293,7 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
           self.templateName = row[0]
           header = True
     except csv.Error as e:
-      print('file %s, line %d: %s' % (filename, reader.line_num, e))
+      print('file %s, line %d: %s' % (path, reader.line_num, e))
       return False
 
     self.createTemplateModel()
@@ -320,7 +308,7 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     self.templatePathOrigins = []
 
     tempModelNode = slicer.mrmlScene.GetNodeByID(self.templateModelNodeID)
-    if tempModelNode == None:
+    if tempModelNode is None:
       tempModelNode = slicer.vtkMRMLModelNode()
       tempModelNode.SetName('NeedleGuideTemplate')
       slicer.mrmlScene.AddNode(tempModelNode)
@@ -334,7 +322,7 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
                                                     self.onTemplateTransformUpdated)
       
     pathModelNode = slicer.mrmlScene.GetNodeByID(self.needlePathModelNodeID)
-    if pathModelNode == None:
+    if pathModelNode is None:
       pathModelNode = slicer.vtkMRMLModelNode()
       pathModelNode.SetName('NeedleGuideNeedlePath')
       slicer.mrmlScene.AddNode(pathModelNode)
@@ -383,11 +371,11 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
       pathTubeFilter.Update()
 
       if vtk.VTK_MAJOR_VERSION <= 5:
-        tempModelAppend.AddInput(tempTubeFilter.GetOutput());
-        pathModelAppend.AddInput(pathTubeFilter.GetOutput());
+        tempModelAppend.AddInput(tempTubeFilter.GetOutput())
+        pathModelAppend.AddInput(pathTubeFilter.GetOutput())
       else:
-        tempModelAppend.AddInputData(tempTubeFilter.GetOutput());
-        pathModelAppend.AddInputData(pathTubeFilter.GetOutput());
+        tempModelAppend.AddInputData(tempTubeFilter.GetOutput())
+        pathModelAppend.AddInputData(pathTubeFilter.GetOutput())
 
       tempModelAppend.Update()
       tempModelNode.SetAndObservePolyData(tempModelAppend.GetOutput())
@@ -398,17 +386,17 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
   def setModelVisibilityByID(self, id, visible):
 
     mnode = slicer.mrmlScene.GetNodeByID(id)
-    if mnode != None:
+    if mnode is not None:
       dnode = mnode.GetDisplayNode()
-      if dnode != None:
+      if dnode is not None:
         dnode.SetVisibility(visible)
 
   def setModelSliceIntersectionVisibilityByID(self, id, visible):
 
     mnode = slicer.mrmlScene.GetNodeByID(id)
-    if mnode != None:
+    if mnode is not None:
       dnode = mnode.GetDisplayNode()
-      if dnode != None:
+      if dnode is not None:
         dnode.SetSliceIntersectionVisibility(visible)
         
   def setTemplateVisibility(self, visibility):
@@ -427,13 +415,13 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     print 'updateTemplateVectors()'
 
     mnode = slicer.mrmlScene.GetNodeByID(self.templateModelNodeID)
-    if mnode == None:
+    if mnode is None:
       return 0
     tnode = mnode.GetParentTransformNode()
 
     trans = vtk.vtkMatrix4x4()
-    if tnode != None:
-      tnode.GetMatrixTransformToWorld(trans);
+    if tnode is not None:
+      tnode.GetMatrixTransformToWorld(trans)
     else:
       trans.Identity()
 
@@ -452,7 +440,7 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
       vec = self.templatePathVectors[i]
       tvec = trans.MultiplyDoublePoint(vec)
       self.pathVectors.append(numpy.array([tvec[0]-offset[0], tvec[1]-offset[1], tvec[2]-offset[2]]))
-      i = i + 1
+      i += 1
 
   def computeNearestPath(self, pos):
     # Identify the nearest path and return the index for self.templateConfig[] and depth
@@ -476,7 +464,7 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
         minMag2 = mag2
         minIndex = i
         minDepth = aproj
-      i = i + 1
+      i += 1
 
     indexX = '--'
     indexY = '--'
@@ -485,10 +473,10 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     if minIndex >= 0:
       indexX = self.templateIndex[minIndex][0]
       indexY = self.templateIndex[minIndex][1]
-      if minDepth > 0 and minDepth < self.templateMaxDepth[minIndex]:
+      if 0 < minDepth < self.templateMaxDepth[minIndex]:
         inRange = True
 
-    return (indexX, indexY, minDepth, inRange)
+    return indexX, indexY, minDepth, inRange
       
     
 class NeedleGuideTemplateTest(ScriptedLoadableModuleTest):
