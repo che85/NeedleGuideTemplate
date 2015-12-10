@@ -3,6 +3,7 @@ import csv
 import numpy
 from __main__ import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
+from Utils.mixins import ModuleWidgetMixin
 
 #
 # NeedleGuideTemplate
@@ -87,19 +88,16 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin)
     self.showTrajectoriesCheckBox.setToolTip("Show 3D model of the fiducial")
     mainFormLayout.addRow("Show Trajectories:", self.showTrajectoriesCheckBox)
 
-    #
-    # input volume selector
-    #
-    self.targetFiducialsSelector = slicer.qMRMLNodeComboBox()
-    self.targetFiducialsSelector.nodeTypes = (("vtkMRMLMarkupsFiducialNode"), "")
-    self.targetFiducialsSelector.selectNodeUponCreation = True
-    self.targetFiducialsSelector.addEnabled = True
-    self.targetFiducialsSelector.removeEnabled = True
-    self.targetFiducialsSelector.noneEnabled = False
-    self.targetFiducialsSelector.showHidden = False
-    self.targetFiducialsSelector.showChildNodeTypes = False
-    self.targetFiducialsSelector.setMRMLScene(slicer.mrmlScene)
-    self.targetFiducialsSelector.setToolTip("Select Markups for targets")
+
+    self.inputVolumeSelector = self.createComboBox(nodeTypes=["vtkMRMLScalarVolumeNode", ""], noneEnabled=False,
+                                                   selectNodeUponCreation=True, showChildNodeTypes=False)
+
+    mainFormLayout.addRow("Input Volume: ", self.inputVolumeSelector)
+
+    self.targetFiducialsSelector = self.createComboBox(nodeTypes=["vtkMRMLMarkupsFiducialNode", ""], noneEnabled=False,
+                                                       selectNodeUponCreation=True, showChildNodeTypes=False,
+                                                       addEnabled=True, removeEnabled=True, showHidden=False,
+                                                       toolTip="Select Markups for targets")
     mainFormLayout.addRow("Targets: ", self.targetFiducialsSelector)
 
     self.targetFiducialsNode = None
@@ -137,6 +135,15 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin)
     self.targetFiducialsSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onFiducialsSelected)
     self.table.connect('cellClicked(int, int)', self.onTableSelected)
     self.openWindowButton.connect('clicked(bool)', self.onOpenWindowButton)
+    self.inputVolumeSelector.connect('currentNodeChanged(bool)', self.onInputVolumeSelected)
+
+  def onInputVolumeSelected(self):
+    volume = self.inputVolumeSelector.currentNode()
+    if volume:
+      for viewName in ["Red", "Green", "Yellow"]:
+        widget = self.layoutManager.sliceWidget(viewName)
+        compositeNode = widget.mrmlSliceCompositeNode()
+        compositeNode.SetBackgroundVolumeID(volume.GetID())
 
   def updateTable(self):
 
