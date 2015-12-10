@@ -21,7 +21,7 @@ class NeedleGuideTemplate(ScriptedLoadableModule):
     self.parent.dependencies = []
     self.parent.contributors = ["Junichi Tokuda (Brigham and Women's Hospital)"] # replace with "Firstname Lastname (Organization)"
     self.parent.helpText = """
-    The NeedleGuideTemlpate module guides image-guided percutaneous interventions with needle-guide template.
+    The NeedleGuideTemplate module guides image-guided percutaneous interventions with needle-guide template.
     The module calculates identify the needle guide hole and needle insertion depth to reach to the target
     specified on the image. 
     """
@@ -78,16 +78,15 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin)
     self.showTemplateCheckBox.setToolTip("Show 3D model of the template")
     mainFormLayout.addRow("Show Template:", self.showTemplateCheckBox)
 
-    self.showFiducialCheckBox = qt.QCheckBox()
-    self.showFiducialCheckBox.checked = 0
-    self.showFiducialCheckBox.setToolTip("Show 3D model of the fiducial")
-    mainFormLayout.addRow("Show Fiducial:", self.showFiducialCheckBox)
-
     self.showTrajectoriesCheckBox = qt.QCheckBox()
     self.showTrajectoriesCheckBox.checked = 0
     self.showTrajectoriesCheckBox.setToolTip("Show 3D model of the fiducial")
     mainFormLayout.addRow("Show Trajectories:", self.showTrajectoriesCheckBox)
 
+    self.transformSelector = self.createComboBox(nodeTypes=["vtkMRMLLinearTransformNode", ""], noneEnabled=False,
+                                                 selectNodeUponCreation=True, showChildNodeTypes=False)
+
+    mainFormLayout.addRow("Input Transform: ", self.transformSelector)
 
     self.inputVolumeSelector = self.createComboBox(nodeTypes=["vtkMRMLScalarVolumeNode", ""], noneEnabled=False,
                                                    selectNodeUponCreation=True, showChildNodeTypes=False)
@@ -130,12 +129,12 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin)
 
   def setupConnections(self):
     self.showTemplateCheckBox.connect('toggled(bool)', self.onShowTemplate)
-    self.showFiducialCheckBox.connect('toggled(bool)', self.onShowFiducial)
     self.showTrajectoriesCheckBox.connect('toggled(bool)', self.onShowTrajectories)
     self.targetFiducialsSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onFiducialsSelected)
     self.table.connect('cellClicked(int, int)', self.onTableSelected)
     self.openWindowButton.connect('clicked(bool)', self.onOpenWindowButton)
     self.inputVolumeSelector.connect('currentNodeChanged(bool)', self.onInputVolumeSelected)
+    self.transformSelector.connect('currentNodeChanged(bool)', self.onTransformNodeSelected)
 
   def onInputVolumeSelected(self):
     volume = self.inputVolumeSelector.currentNode()
@@ -144,6 +143,11 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin)
         widget = self.layoutManager.sliceWidget(viewName)
         compositeNode = widget.mrmlSliceCompositeNode()
         compositeNode.SetBackgroundVolumeID(volume.GetID())
+
+  def onTransformNodeSelected(self):
+    transform = self.transformSelector.currentNode()
+    if transform:
+      self.logic.setTransform(transform)
 
   def updateTable(self):
 
@@ -210,9 +214,6 @@ class NeedleGuideTemplateWidget(ScriptedLoadableModuleWidget, ModuleWidgetMixin)
   def onShowTemplate(self):
     print "onShowTemplate(self)"
     self.logic.setTemplateVisibility(self.showTemplateCheckBox.checked)
-    
-  def onShowFiducial(self):
-    pass
 
   def onShowTrajectories(self):
     print "onTrajectories(self)"
@@ -307,30 +308,30 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
     self.templatePathVectors = []
     self.templatePathOrigins = []
 
-    tempModelNode = slicer.mrmlScene.GetNodeByID(self.templateModelNodeID)
-    if tempModelNode is None:
-      tempModelNode = slicer.vtkMRMLModelNode()
-      tempModelNode.SetName('NeedleGuideTemplate')
-      slicer.mrmlScene.AddNode(tempModelNode)
-      self.templateModelNodeID = tempModelNode.GetID()
+    self.tempModelNode = slicer.mrmlScene.GetNodeByID(self.templateModelNodeID)
+    if self.tempModelNode is None:
+      self.tempModelNode = slicer.vtkMRMLModelNode()
+      self.tempModelNode.SetName('NeedleGuideTemplate')
+      slicer.mrmlScene.AddNode(self.tempModelNode)
+      self.templateModelNodeID = self.tempModelNode.GetID()
 
       dnode = slicer.vtkMRMLModelDisplayNode()
       #dnode.SetColor(self.ModelColor)
       slicer.mrmlScene.AddNode(dnode)
-      tempModelNode.SetAndObserveDisplayNodeID(dnode.GetID())
-      self.modelNodetag = tempModelNode.AddObserver(slicer.vtkMRMLTransformableNode.TransformModifiedEvent,
-                                                    self.onTemplateTransformUpdated)
+      self.tempModelNode.SetAndObserveDisplayNodeID(dnode.GetID())
+      self.modelNodetag = self.tempModelNode.AddObserver(slicer.vtkMRMLTransformableNode.TransformModifiedEvent,
+                                                         self.onTemplateTransformUpdated)
       
-    pathModelNode = slicer.mrmlScene.GetNodeByID(self.needlePathModelNodeID)
-    if pathModelNode is None:
-      pathModelNode = slicer.vtkMRMLModelNode()
-      pathModelNode.SetName('NeedleGuideNeedlePath')
-      slicer.mrmlScene.AddNode(pathModelNode)
-      self.needlePathModelNodeID = pathModelNode.GetID()
+    self.pathModelNode = slicer.mrmlScene.GetNodeByID(self.needlePathModelNodeID)
+    if self.pathModelNode is None:
+      self.pathModelNode = slicer.vtkMRMLModelNode()
+      self.pathModelNode.SetName('NeedleGuideNeedlePath')
+      slicer.mrmlScene.AddNode(self.pathModelNode)
+      self.needlePathModelNodeID = self.pathModelNode.GetID()
 
       dnode = slicer.vtkMRMLModelDisplayNode()
       slicer.mrmlScene.AddNode(dnode)
-      pathModelNode.SetAndObserveDisplayNodeID(dnode.GetID())
+      self.pathModelNode.SetAndObserveDisplayNodeID(dnode.GetID())
       
     pathModelAppend = vtk.vtkAppendPolyData()
     tempModelAppend = vtk.vtkAppendPolyData()
@@ -378,10 +379,15 @@ class NeedleGuideTemplateLogic(ScriptedLoadableModuleLogic):
         pathModelAppend.AddInputData(pathTubeFilter.GetOutput())
 
       tempModelAppend.Update()
-      tempModelNode.SetAndObservePolyData(tempModelAppend.GetOutput())
+      self.tempModelNode.SetAndObservePolyData(tempModelAppend.GetOutput())
       pathModelAppend.Update()
-      pathModelNode.SetAndObservePolyData(pathModelAppend.GetOutput())
+      self.pathModelNode.SetAndObservePolyData(pathModelAppend.GetOutput())
 
+  def setTransform(self, transform):
+    if self.pathModelNode:
+      self.pathModelNode.SetAndObserveTransformNodeID(transform.GetID())
+    if self.tempModelNode:
+      self.tempModelNode.SetAndObserveTransformNodeID(transform.GetID())
 
   def setModelVisibilityByID(self, id, visible):
 
@@ -532,7 +538,6 @@ class NeedleGuideTemplateTest(ScriptedLoadableModuleTest):
     logic = NeedleGuideTemplateLogic()
     self.assertTrue( logic.hasImageData(volumeNode) )
     self.delayDisplay('Test passed!')
-
 
 
 class ProjectionWindow(qt.QWidget):
